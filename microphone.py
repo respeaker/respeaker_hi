@@ -154,5 +154,5 @@ class Microphone():
         self.quit = True
         self.queue.put((None, True))
 
+        self.stream.stop_stream()
         self.stream.close()
-        self.pa.terminate()
