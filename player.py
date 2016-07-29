@@ -1,8 +1,13 @@
-
+"""
+Play a wav file or a raw audio buffer
+The default parameter of this player is 1 channel, 16kHz, 16bit samples.
+"""
 import pyaudio
 import wave
+import io
 import time
 import threading
+import Queue
 
 CHUNK_SIZE = 4096
 
@@ -17,27 +22,33 @@ class Player():
                                 #    output_device_index=1,
                                    frames_per_buffer=CHUNK_SIZE,
                                    stream_callback=self.callback)
+        self.buffer = b''
+        self.lock = threading.RLock()
 
-
-    def play(self, wav_file, block=True):
+    def play(self, wav_file):
         self.wav = wave.open(wav_file, 'rb')
-        # self.stream = self.pa.open(format=self.pa.get_format_from_width(self.wav.getsampwidth()),
-        #                                channels=self.wav.getnchannels(),
-        #                                rate=self.wav.getframerate(),
-        #                                output=True,
-        #                             #    output_device_index=1,
-        #                                frames_per_buffer=CHUNK_SIZE,
-        #                                stream_callback=self.callback)
-        self.event = threading.Event()
-        self.stream.start_stream()
-        if block:
-            self.event.wait()
+        n = self.wav.getnframes()
+        with self.lock:
+            self.buffer += self.wav.readframes(n)
+        self.wav.close()
+        if not self.stream.is_active():
             self.stream.stop_stream()
+            self.stream.start_stream()
+
+    def play_buffer(self, buffer):
+        with self.lock:
+            self.buffer += buffer
+        if not self.stream.is_active():
+            self.stream.stop_stream()
+            self.stream.start_stream()
 
     def callback(self, in_data, frame_count, time_info, status):
-        data = self.wav.readframes(frame_count)
-        if self.wav.getnframes() == self.wav.tell():
-            data = data.ljust(frame_count * self.wav.getsampwidth() * self.wav.getnchannels(), '\x00')
-            self.event.set()
-
+        length = frame_count * 2 * 1
+        with self.lock:
+            data = self.buffer[:length]
+            self.buffer = self.buffer[len(data):]
         return data, pyaudio.paContinue
+
+    def close(self):
+        self.stream.stop_stream()
+        self.stream.close()
