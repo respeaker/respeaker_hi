@@ -47,7 +47,7 @@ class Microphone():
         config.set_string('-hmm', os.path.join(script_dir, 'model/hmm/en'))
         # config.set_string('-lm', os.path.join(script_dir, 'model/coco.lm'))
         config.set_string('-dict', os.path.join(script_dir, 'model/respeaker.dic'))
-        config.set_string('-keyphrase', 'Respeaker')
+        config.set_string('-keyphrase', 'respeaker')
         config.set_float('-kws_threshold', 1e-30)
         config.set_int('-samprate', RATE)
         config.set_int('-nfft', 2048)
@@ -113,7 +113,7 @@ class Microphone():
         self.stream.stop_stream()
         return b''.join(frames)
 
-    def detect(self, keyphrase='Respeaker'):
+    def detect(self, keyphrase='respeaker'):
         detected = False
 
         self.triggered = False
