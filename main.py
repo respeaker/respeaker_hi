@@ -48,6 +48,8 @@ while not mission_completed:
     try:
         text = bing.recognize(data, language='en-US')
         print('Bing:' + text.encode('utf-8'))
+        tts_data = bing.synthesize('you said ' + text)
+        player.play_raw(tts_data)
     except UnknownValueError:
         print("Microsoft Bing Voice Recognition could not understand audio")
     except RequestError as e:
