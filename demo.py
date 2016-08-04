@@ -21,7 +21,7 @@ hi = os.path.join(script_dir, 'audio/hi.wav')
 spi = SPI()
 spi.write('offline\n')
 
-recognizer = BingVoice(BING_KEY)
+bing = BingVoice(BING_KEY)
 
 mission_completed = False
 awake = False
