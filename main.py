@@ -2,7 +2,7 @@
 import os
 import signal
 from microphone import Microphone
-from bing_recognizer import *
+from bing_voice import *
 from player import Player
 import pyaudio
 import sys
@@ -16,7 +16,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 
 hi = os.path.join(script_dir, 'audio/hi.wav')
 
-recognizer = BingVoiceRecognizer(BING_KEY)
+bing = BingVoice(BING_KEY)
 
 mission_completed = False
 awake = False
@@ -46,7 +46,7 @@ while not mission_completed:
 
     # recognize speech using Microsoft Bing Voice Recognition
     try:
-        text = recognizer.recognize(data, language='en-US')
+        text = bing.recognize(data, language='en-US')
         print('Bing:' + text.encode('utf-8'))
     except UnknownValueError:
         print("Microsoft Bing Voice Recognition could not understand audio")
