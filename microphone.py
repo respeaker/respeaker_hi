@@ -7,21 +7,13 @@ from pocketsphinx.pocketsphinx import *
 import time
 import Queue
 
-# import timeit
-
-# def wrapper(func, *args, **kwargs):
-#     def wrapped():
-#         return func(*args, **kwargs)
-#     return wrapped
-
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 16000
-FRAME_DURATION_MS = 30  # 30 ms
-PADDING_DURATION_MS = 300
-FRAME_SIZE = int(RATE * FRAME_DURATION_MS / 1000) # 30 * 16 = 480
-PADDING_FRAMES = int(PADDING_DURATION_MS / FRAME_DURATION_MS)
-KEY_FRAMES = 10
+SAMPLE_RATE = 16000
+CHUNK_MS = 30    # 10, 20 or 30 (ms)
+CHUNK_SIZE = int(SAMPLE_RATE * CHUNK_MS / 1000) # 30 * 16 = 480
+DEFAULT_PADDING_CHUNKS = 32
+DEFAULT_PADDING_MS = DEFAULT_PADDING_CHUNKS * CHUNK_MS
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -32,11 +24,11 @@ class Microphone():
         self.pa = pa
         self.stream = self.pa.open(format=FORMAT,
                                     channels=CHANNELS,
-                                    rate=RATE,
+                                    rate=SAMPLE_RATE,
                                     input=True,
                                     start=False,
                                     # input_device_index=1,
-                                    frames_per_buffer=FRAME_SIZE,
+                                    frames_per_buffer=CHUNK_SIZE,
                                     stream_callback=self.capture_callback)
         self.vad = webrtcvad.Vad(level)
         self.quit = False
@@ -47,42 +39,36 @@ class Microphone():
         config.set_string('-hmm', os.path.join(script_dir, 'model/hmm/en'))
         # config.set_string('-lm', os.path.join(script_dir, 'model/coco.lm'))
         config.set_string('-dict', os.path.join(script_dir, 'model/respeaker.dic'))
-        config.set_string('-keyphrase', 'respeaker')
-        config.set_float('-kws_threshold', 1e-30)
-        config.set_int('-samprate', RATE)
-        config.set_int('-nfft', 2048)
+        config.set_string('-kws', os.path.join(script_dir, 'model/keywords.txt'))
+        # config.set_string('-keyphrase', 'respeaker')
+        # config.set_float('-kws_threshold', 1e-43)
+        config.set_int('-samprate', SAMPLE_RATE) # on ubuntu 14.04, it must be changed to `set_float`
+        # config.set_int('-nfft', 2048)
         config.set_string("-logfn", os.devnull)
         self.decoder = Decoder(config)
         self.decoder.start_utt()
         self.decoder_need_restart = False
 
-        self.ring_buffer = collections.deque(maxlen=PADDING_FRAMES)
-        self.triggered = False
-        self.ring_buffer_flags = [0] * KEY_FRAMES
-        self.ring_buffer_index = 0
-        self.duration = 0
-        self.max_duration = 9000
-
     def capture_callback(self, data, frame_count, time_info, status):
-        active = self.vad.is_speech(data, RATE)
+        active = self.vad.is_speech(data, SAMPLE_RATE)
         sys.stdout.write('1' if active else '0')
         self.ring_buffer_flags[self.ring_buffer_index] = 1 if active else 0
         self.ring_buffer_index += 1
-        self.ring_buffer_index %= KEY_FRAMES
+        self.ring_buffer_index %= self.padding_chunks
         if not self.triggered:
             self.ring_buffer.append(data)
             num_voiced = sum(self.ring_buffer_flags)
-            if num_voiced > 0.6 * KEY_FRAMES:
+            if num_voiced >= 4:
                 sys.stdout.write('+')
                 self.triggered = True
                 self.queue.put((b''.join(self.ring_buffer), False))
-                self.duration = PADDING_DURATION_MS
+                self.duration = len(self.ring_buffer) * CHUNK_MS
                 self.ring_buffer.clear()
         else:
             ending = False  # end of a phrase
             num_voiced = sum(self.ring_buffer_flags)
-            self.duration += FRAME_DURATION_MS
-            if num_voiced < 0.2 * KEY_FRAMES or self.duration >= self.max_duration:
+            self.duration += CHUNK_MS
+            if num_voiced < 2 or self.duration >= self.max_duration:
                 self.triggered = False
                 ending = True
                 sys.stdout.write('-')
@@ -93,35 +79,24 @@ class Microphone():
         sys.stdout.flush()
         return None, pyaudio.paContinue
 
-    def listen(self, max_duration=9000):
-        self.ring_buffer.clear()
-        self.triggered = False
-        self.ring_buffer_flags = [0] * PADDING_FRAMES
-        self.ring_buffer_index = 0
-
-        with self.queue.mutex:
-            self.queue.queue.clear()
-
+    def listen(self, max_ms=9000):
+        self.set_padding_time(DEFAULT_PADDING_MS)
+        self.start(max_ms)
         frames = []
-        self.stream.start_stream()
         while not self.quit:
             data, ending = self.queue.get()
             frames.append(data)
             if ending:
                 break
 
-        self.stream.stop_stream()
+        self.stop()
         return b''.join(frames)
 
     def detect(self, keyphrase='respeaker'):
+        self.set_padding_time(900)
+        self.start(3000)
+
         detected = False
-
-        self.triggered = False
-        self.ring_buffer.clear()
-
-        with self.queue.mutex:
-            self.queue.queue.clear()
-        self.stream.start_stream()
         while not self.quit:
             if self.decoder_need_restart:
                 self.decoder.end_utt()  # it takes about 1 second on respeaker
@@ -147,12 +122,30 @@ class Microphone():
                     self.decoder_need_restart = True
                     break
 
-        self.stream.stop_stream()
+        self.stop()
         return detected
 
     def close(self):
+        self.queue.put(('', True))
         self.quit = True
-        self.queue.put((None, True))
 
         self.stream.close()
         self.pa.terminate()
+
+    def set_padding_time(self, ms=DEFAULT_PADDING_MS):
+        chunks = int((ms + CHUNK_MS - 1) / CHUNK_MS)
+        self.padding_chunks = chunks
+        self.ring_buffer = collections.deque(maxlen=chunks)
+        self.ring_buffer_flags = [0] * chunks
+        self.ring_buffer_index = 0
+
+    def start(self, max_ms):
+        self.max_duration = max_ms
+        self.duration = 0
+        self.triggered = False
+        with self.queue.mutex:
+            self.queue.queue.clear()
+        self.stream.start_stream()
+
+    def stop(self):
+        self.stream.stop_stream()

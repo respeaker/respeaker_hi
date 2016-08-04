@@ -1,10 +1,10 @@
-
 import pyaudio
 import wave
 import time
 import threading
 
 CHUNK_SIZE = 4096
+
 
 class Player():
     def __init__(self, pa):
@@ -14,10 +14,9 @@ class Player():
                                    rate=16000,
                                    output=True,
                                    start=False,
-                                #    output_device_index=1,
+                                   #output_device_index=1,
                                    frames_per_buffer=CHUNK_SIZE,
                                    stream_callback=self.callback)
-
 
     def play(self, wav_file, block=True):
         self.wav = wave.open(wav_file, 'rb')
@@ -32,6 +31,7 @@ class Player():
         self.stream.start_stream()
         if block:
             self.event.wait()
+            time.sleep(1.4)
             self.stream.stop_stream()
 
     def callback(self, in_data, frame_count, time_info, status):
