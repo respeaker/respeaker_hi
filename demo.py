@@ -1,17 +1,20 @@
-
 import os
 import signal
-from microphone import Microphone
-from bing_voice import *
-from player import Player
-import pyaudio
 import sys
-import time
+import socket
+
+import pyaudio
+
+from bing_voice import *
+from microphone import Microphone
+from player import Player
 from spi import SPI
+
 try:
     from creds import BING_KEY
 except ImportError:
-    print('Get a key from https://www.microsoft.com/cognitive-services/en-us/speech-api and create creds.py with the key')
+    print(
+    'Get a key from https://www.microsoft.com/cognitive-services/en-us/speech-api and create creds.py with the key')
     sys.exit(-1)
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -30,13 +33,33 @@ pa = pyaudio.PyAudio()
 mic = Microphone(pa)
 player = Player(pa)
 
-spi.write('online\n');
+
+def check_internet(host="8.8.8.8", port=53, timeout=6):
+    """
+    Host: 8.8.8.8 (google-public-dns-a.google.com)
+    OpenPort: 53/tcp
+    Service: domain (DNS/TCP)
+    """
+    try:
+        socket.setdefaulttimeout(timeout)
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
+        return True
+    except Exception as ex:
+        print ex.message
+        return False
+
+
+while not check_internet(host="223.6.6.6"):
+    pass
+
+spi.write('online\n')
+
 
 def handle_int(sig, frame):
     global mission_completed
 
     mission_completed = True
-    mic.close()
+    mic.quit()
 
 
 signal.signal(signal.SIGINT, handle_int)
@@ -66,3 +89,5 @@ while not mission_completed:
 
     spi.write('sleep\n')
     awake = False
+
+mic.close()

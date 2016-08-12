@@ -1,6 +1,7 @@
 
 import os
-import signal
+import time
+from threading import Thread, Event
 from microphone import Microphone
 from bing_voice import *
 from player import Player
@@ -12,47 +13,59 @@ except ImportError:
     print('Get a key from https://www.microsoft.com/cognitive-services/en-us/speech-api and create creds.py with the key')
     sys.exit(-1)
 
+
 script_dir = os.path.dirname(os.path.realpath(__file__))
-
 hi = os.path.join(script_dir, 'audio/hi.wav')
+mic = None
+quit_event = Event()
 
-bing = BingVoice(BING_KEY)
+def main():
+    global mic, quit_event
 
-mission_completed = False
-awake = False
+    bing = BingVoice(BING_KEY)
+    awake = False
 
-pa = pyaudio.PyAudio()
-mic = Microphone(pa)
-player = Player(pa)
+    pa = pyaudio.PyAudio()
+    mic = Microphone(pa)
+    player = Player(pa)
 
+    while not quit_event.is_set():
+        if not awake:
+            if mic.detect():
+                awake = True
+                player.play(hi)
+                continue
+            else:
+                break
 
-def handle_int(sig, frame):
-    global mission_completed
-    
-    mission_completed = True
+        data = mic.listen()
+        if data:
+            # recognize speech using Microsoft Bing Voice Recognition
+            try:
+                text = bing.recognize(data, language='en-US')
+                print('Bing:' + text.encode('utf-8'))
+                tts_data = bing.synthesize('you said ' + text)
+                player.play_raw(tts_data)
+            except UnknownValueError:
+                print("Microsoft Bing Voice Recognition could not understand audio")
+            except RequestError as e:
+                print("Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e))
+
+        awake = False
+
     mic.close()
 
+if __name__ == '__main__':
+    thread = Thread(target=main)
+    thread.start()
+    while True:
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            print('\nquit')
+            quit_event.set()
+            mic.quit()
+            break
 
-signal.signal(signal.SIGINT, handle_int)
+    thread.join()
 
-while not mission_completed:
-    if not awake:
-        if mic.detect():
-            awake = True
-            player.play(hi)
-        continue
-
-    data = mic.listen()
-
-    # recognize speech using Microsoft Bing Voice Recognition
-    try:
-        text = bing.recognize(data, language='en-US')
-        print('Bing:' + text.encode('utf-8'))
-        tts_data = bing.synthesize('you said ' + text)
-        player.play_raw(tts_data)
-    except UnknownValueError:
-        print("Microsoft Bing Voice Recognition could not understand audio")
-    except RequestError as e:
-        print("Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e))
-
-    awake = False
