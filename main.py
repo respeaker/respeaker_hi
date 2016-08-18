@@ -31,14 +31,14 @@ def main():
 
     while not quit_event.is_set():
         if not awake:
-            if mic.detect():
+            if mic.recognize(keyword='hey respeaker'):
                 awake = True
                 player.play(hi)
                 continue
             else:
                 break
 
-        data = mic.listen()
+        data = b''.join(mic.listen())
         if data:
             # recognize speech using Microsoft Bing Voice Recognition
             try:
@@ -46,10 +46,19 @@ def main():
                 print('Bing:' + text.encode('utf-8'))
                 tts_data = bing.synthesize('you said ' + text)
                 player.play_raw(tts_data)
+
+                if text.find('start recording') >= 0:
+                    mic.record('record.wav')
+                elif text.find('stop recording') >= 0:
+                    mic.interrupt(stop_recording=True)
+                elif text.find('play recording audio') >= 0:
+                    player.play('record.wav')
             except UnknownValueError:
                 print("Microsoft Bing Voice Recognition could not understand audio")
             except RequestError as e:
                 print("Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e))
+        else:
+            print('no data')
 
         awake = False
 
@@ -64,7 +73,7 @@ if __name__ == '__main__':
         except KeyboardInterrupt:
             print('\nquit')
             quit_event.set()
-            mic.quit()
+            mic.interrupt(True, True)
             break
 
     thread.join()

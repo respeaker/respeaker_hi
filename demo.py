@@ -56,23 +56,27 @@ spi.write('online\n')
 
 
 def handle_int(sig, frame):
-    global mission_completed
+    global mission_completed, mic
 
+    print('quit')
     mission_completed = True
-    mic.quit()
+    mic.interrupt(stop_listening=True, stop_recording=True)
 
 
 signal.signal(signal.SIGINT, handle_int)
 
 while not mission_completed:
     if not awake:
-        if mic.detect():
+        if mic.recognize(keyword='hey respeaker'):
             spi.write('wakeup\n')
             awake = True
             player.play(hi)
         continue
 
-    data = mic.listen()
+    data = b''.join(mic.listen())
+    if not data:
+        break
+
     spi.write('wait\n')
 
     # recognize speech using Microsoft Bing Voice Recognition
@@ -91,3 +95,4 @@ while not mission_completed:
     awake = False
 
 mic.close()
+spi.write('sleep\n')
