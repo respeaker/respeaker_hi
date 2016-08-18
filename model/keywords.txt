@@ -1,1 +1,6 @@
-respeaker /1e-45/
+hey respeaker /1e-53/
+play music /1e-60/
+increase volume /1e-60/
+decrease volume /1e-55/
+turn on light /1e-56/
+turn off light /1e-55/
